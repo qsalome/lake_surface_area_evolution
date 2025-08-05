@@ -1,7 +1,6 @@
-import pathlib
-import datetime
 import os
-import getpass
+import pathlib
+import numpy as np
 from tqdm import tqdm
 
 import pandas as pd
@@ -9,11 +8,9 @@ import geopandas
 import rioxarray
 from geocube.vector import vectorize
 from shapely.geometry import LineString,Polygon
-from calendar import monthrange
-from datetime import datetime
+from calendar import monthrange,month_name
 
 import matplotlib.pyplot as plt
-import numpy as np
 
 from sentinelhub import (
     SHConfig,
@@ -175,11 +172,90 @@ def extract_polygon_lake(water,year=2024,month=1):
    return poly[['year','month','geometry']],line_gdf
 
 #--------------------------------------------------------------------
+def plot_rgb(raster,year=2024,month=1):
+   """
+   Plot the RGB composite associated with the raster image
+   after proejction to EPSG:4326.
+   
+   Parameters
+   ----------
+   raster: xarray.core.dataarray.DataArray
+         3d raster data over the period of interest
+
+   Returns
+   -------
+   matplotlib.figure.Figure
+         RGB composite image of the raster.
+   """
+   # Reproject to EPSG:4326
+   raster = raster.rio.reproject("EPSG:4326")
+
+   # Extract the red, green, and blue bands
+   red_band   = raster.sel(band=4)
+   green_band = raster.sel(band=3)
+   blue_band  = raster.sel(band=2)
+
+   # Stack the bands together to create an RGB composite
+   rgb_image = np.dstack((red_band.values, green_band.values, blue_band.values))
+
+   # Normalize the image values between 0 and 1 by dividing by the max value
+   rgb_image = rgb_image / np.max(rgb_image)
+   rgb_image[np.where(rgb_image<0)] = float('nan')
+   rgb_image = np.clip(rgb_image,0,0.45)/0.45
+
+
+   fig = plt.figure()
+   ax = fig.add_subplot()
+   im = plt.imshow(rgb_image)
+   ax.set_title(f"RGB composite {month_name[month]} {year} (Sentinel-2)")
+#   ax.axis('off')  # Hide the axis for better visualization
+
+   return fig
+
+#--------------------------------------------------------------------
+def plot_raster(raster,vmin=None,vmax=None,year=2024,month=1):
+   """
+   Plot the raster image after proejction to EPSG:4326.
+   
+   Parameters
+   ----------
+   raster: xarray.core.dataarray.DataArray
+         2d raster data over the period of interest
+   vmin,vmax: float
+         limits of the color bar
+   year: int
+         year of interest
+   month: int
+         month of interest
+
+   Returns
+   -------
+   matplotlib.figure.Figure
+         Map of the raster.
+   """
+   # Reproject to EPSG:4326
+   raster = raster.rio.reproject("EPSG:4326")
+
+   fig = plt.figure()
+   ax = fig.add_subplot()
+
+   im = raster.plot(ax=ax, cmap='terrain', vmin=vmin,vmax=vmax,
+            add_colorbar=True)
+
+   colorbar = im.colorbar
+   ax.set_title(f"{month_name[month]} {year}")
+   ax.set_xlabel("Eastern longitude (degrees)")
+   ax.set_ylabel("Latitude (degrees)")
+
+   return fig
+
+#--------------------------------------------------------------------
 
 
 # Paths definition
 NOTEBOOK_PATH  = pathlib.Path().resolve()
 DATA_DIRECTORY = NOTEBOOK_PATH / "data"
+FIG_DIRECTORY  = NOTEBOOK_PATH / "figures"
 
 
 config = SHConfig()
@@ -226,6 +302,17 @@ for year in tqdm(range(2015,2026,1)):
          monthly_record = pd.concat([monthly_record, lake])
       except:
          monthly_record = lake.copy()
+
+      if(len(monthly_record)<=3): continue
+      elif(lake.area[0]<0.85*monthly_record.area.median()):
+         rgb = plot_rgb(raster,year=year,month=month)
+         rgb.savefig(FIG_DIRECTORY / 
+               f"RGB_{month_name[month]}_{year}.png")
+         fig = plot_raster(NDWI,vmin=-1,vmax=1,year=year,month=month)
+         fig.savefig(FIG_DIRECTORY / 
+               f"NDWI_{month_name[month]}_{year}.png")
+
+
 
 # Plots with EPSG:4326
 
