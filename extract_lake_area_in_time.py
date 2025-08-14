@@ -293,7 +293,9 @@ for year in tqdm(range(2015,2026,1)):
       # do not continue if the data are not good (likely due to clouds)
       if(NDWI.max() < 0.25): continue
 
-      water = NDWI.where(NDWI > 0)
+      # threshold for water body;
+      # following McFeeters (2013): https://doi.org/10.3390/rs5073544 
+      water = NDWI.where(NDWI >= 0.3)
       water = water/water
 
       lake,lake_shore = extract_polygon_lake(water,year,month)
