@@ -1,7 +1,9 @@
 import os
 import pathlib
+import argparse
 import numpy as np
 from tqdm import tqdm
+from datetime import datetime,timedelta
 
 import pandas as pd
 import geopandas
@@ -20,6 +22,7 @@ from sentinelhub import (
 #    DownloadRequest,
     MimeType,
     MosaickingOrder,
+    SentinelHubCatalog,
 #    SentinelHubDownloadClient,
     SentinelHubRequest,
     bbox_to_dimensions,
@@ -27,32 +30,63 @@ from sentinelhub import (
 
 
 #--------------------------------------------------------------------
-def determine_time_interval(year,month):
+def determine_time_intervals(total_interval,sampling,bbox):
    """
-   Determine the time interval corresponding to the given month.
-   The time interval is formatted to be used for sentinel requests.
+   Determine the time sub-intervals to be used for sentinel requests.
    
    Parameters
    ----------
-   year: int
-         year of interest
-   month: int
-         month of interest
+   time_interval: tuple of str
+         time interval covering the period of interest
+   sampling: str
+         sampling for the data extraction
 
    Returns
    -------
-   tuple of str
-        time interval that cover the full month
+   list of tuples
+        list of the time sub-intervals
    """
 
-   last_day = monthrange(year, month)[1]
-   date1 = datetime(year,month,1).isoformat()[:10]
-   date2 = datetime(year,month,last_day).isoformat()[:10]
+   date_b = datetime.strptime(total_interval[0],"%Y-%m-%d")
+   date_e = datetime.strptime(total_interval[1],"%Y-%m-%d")
+   if(sampling=="monthly"):
+      intervals = []
+      for year in tqdm(range(date_b.year,date_e.year,1)):
+         for month in range(1,13,1):
+            last_day = monthrange(year, month)[1]
+            date1 = datetime(year,month,1)
+            date2 = datetime(year,month,last_day)
+            if((date2>date_b)&(date1<date_e)):
+               intervals += [(date1.strftime("%Y-%m-%d"),
+                              date2.strftime("%Y-%m-%d"))]
+   elif(sampling=="weekly"):
+      tdelta = timedelta(weeks=1)
+      n_bins = int((date_e - date_b)/tdelta)
+      edges = [(date_b+i*tdelta).strftime("%Y-%m-%d") for i in range(n_bins+1)]
+      intervals = [(edges[i],edges[i + 1]) for i in range(len(edges) - 2)]
+      if(date_b+n_bins*tdelta>date_e):
+         intervals += [(edges[-2],date_e.strftime("%Y-%m-%d"))]
+      else:
+         intervals += [(edges[-2],edges[-1])]
+         intervals += [(edges[-1],date_e.strftime("%Y-%m-%d"))]
+   elif(sampling=="daily"):
+      catalog = SentinelHubCatalog(config=config)
 
-   return (date1,date2)
+      search_iterator = catalog.search(
+          DataCollection.SENTINEL2_L1C,
+          bbox=bbox,
+          time=time_interval,
+          fields={"include": ["id", "properties.datetime"], "exclude": []},
+      )
+      results = list(search_iterator)
+      dates = np.unique([res['properties']['datetime'][:10] for res in results])
+
+      intervals = [(date,date) for date in dates]
+
+   return intervals
 
 #--------------------------------------------------------------------
-def read_sentinel(config,time_interval,epsg="EPSG:3067"):
+def read_sentinel(config,time_interval,bbox,epsg="EPSG:3067"):
    evalscript_all_bands = """
       //VERSION=3
       function setup() {
@@ -141,7 +175,7 @@ def derive_NDWI(raster):
    return NDWI
 
 #--------------------------------------------------------------------
-def extract_polygon_lake(water,year=2024,month=1):
+def extract_polygon_lake(water,time_interval):
    """
    Given a Sentinel data, derive the Normalized Difference Water
    Index (NDWI).
@@ -159,20 +193,19 @@ def extract_polygon_lake(water,year=2024,month=1):
 
    gdf = vectorize(water.astype("float32"))
    gdf = gdf[~np.isnan(gdf["_data"])]
-   gdf["area"]   = gdf.area
+   gdf["area"] = gdf.area
    poly = gdf[gdf["area"] == np.max(gdf["area"])].reset_index()
-   poly['year']  = year
-   poly['month'] = month
+   poly['date']  = time_interval[0]
 
    line = poly.geometry.values[0]
    line = LineString(line.exterior)
-   d    = {'year': [year], 'month': [month], 'geometry': [line]}
+   d    = {'date': [time_interval[0]], 'geometry': [line]}
    line_gdf = geopandas.GeoDataFrame(d,crs=poly.crs)
 
-   return poly[['year','month','geometry']],line_gdf
+   return poly[['date','geometry']],line_gdf
 
 #--------------------------------------------------------------------
-def plot_rgb(raster,year=2024,month=1):
+def plot_rgb(raster,sampling,date=None):
    """
    Plot the RGB composite associated with the raster image
    after proejction to EPSG:4326.
@@ -207,15 +240,22 @@ def plot_rgb(raster,year=2024,month=1):
    fig = plt.figure()
    ax = fig.add_subplot()
    im = plt.imshow(rgb_image)
-   ax.set_title(f"RGB composite {month_name[month]} {year} (Sentinel-2)")
+
+   if(sampling == "monthly"):
+      title  = f"RGB composite {month_name[date.month]}"
+      title += f" {date.year} (Sentinel-2)"
+   else:
+      title  = f"RGB composite {date.day} {month_name[date.month]}"
+      title += f" {date.year} (Sentinel-2)"
+   ax.set_title(title)
 #   ax.axis('off')  # Hide the axis for better visualization
 
    return fig
 
 #--------------------------------------------------------------------
-def plot_raster(raster,vmin=None,vmax=None,year=2024,month=1):
+def plot_raster(raster,sampling,vmin=None,vmax=None,date=None):
    """
-   Plot the raster image after proejction to EPSG:4326.
+   Plot the raster image after projection to EPSG:4326.
    
    Parameters
    ----------
@@ -243,13 +283,35 @@ def plot_raster(raster,vmin=None,vmax=None,year=2024,month=1):
             add_colorbar=True)
 
    colorbar = im.colorbar
-   ax.set_title(f"{month_name[month]} {year}")
+   if(sampling == "monthly"):
+      title = f"{month_name[date.month]} {date.year}"
+   else:
+      title = f"{date.day} {month_name[date.month]} {date.year}"
+   ax.set_title(title)
    ax.set_xlabel("Eastern longitude (degrees)")
    ax.set_ylabel("Latitude (degrees)")
 
    return fig
 
 #--------------------------------------------------------------------
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("-b", "--beginning", type=str,
+                    default='2015-06-01',
+                    help="Initial date of interest ('YYYY-MM-DD')")
+parser.add_argument("-e", "--end",       type=str,
+                    default=datetime.now().strftime("%Y-%m-%d"),
+                    help="Final date of interest ('YYYY-MM-DD')")
+parser.add_argument("-s", "--sampling",  type=str, default='monthly',
+                    choices=['daily','weekly','monthly'],
+                    help="Sampling for the data extraction.")
+
+
+args  = parser.parse_args()
+time_interval = (args.beginning,args.end)
+sampling = args.sampling
+
 
 
 # Paths definition
@@ -267,9 +329,8 @@ size = bbox_to_dimensions(bbox, resolution=resolution)
 
 
 #raster = read_sentinel(config,
-#            time_interval=("2015-09-01", "2015-09-30"),
+#            time_interval=(dates[0],dates[0]),
 #            epsg="EPSG:6369")
-
 
 #NDWI  = derive_NDWI(raster)
 
@@ -279,46 +340,55 @@ size = bbox_to_dimensions(bbox, resolution=resolution)
 #lake,lake_shore = extract_polygon_lake(water)
 
 
-for year in tqdm(range(2015,2026,1)):
-   for month in range(1,13,1):
-      time_interval = determine_time_interval(year,month)
-      raster = read_sentinel(config,time_interval=time_interval,
-            epsg="EPSG:6369")
+intervals = determine_time_intervals(time_interval,sampling,bbox)
 
-      # do not continue if there is no data
-      if(raster.max() == 0): continue
 
-      NDWI  = derive_NDWI(raster)
+for interval in tqdm(intervals):
+   raster = read_sentinel(config,time_interval=interval,bbox=bbox,
+         epsg="EPSG:6369")
 
-      # do not continue if the data are not good (likely due to clouds)
-      if(NDWI.max() < 0.25): continue
+   # do not continue if there is no data
+   if(raster.max() == 0): continue
 
-      # threshold for water body;
-      # following McFeeters (2013): https://doi.org/10.3390/rs5073544 
-      water = NDWI.where(NDWI >= 0.3)
-      water = water/water
+   NDWI  = derive_NDWI(raster)
 
-      lake,lake_shore = extract_polygon_lake(water,year,month)
+   # do not continue if the data are not good (likely due to clouds)
+   if(NDWI.max() < 0.3): continue
 
-      try:
-         monthly_record = pd.concat([monthly_record, lake])
-      except:
-         monthly_record = lake.copy()
+   # threshold for water body;
+   # following McFeeters (2013): https://doi.org/10.3390/rs5073544 
+   water = NDWI.where(NDWI >= 0.3)
+   water = water/water
 
-      if(len(monthly_record)<=3): continue
-      elif(lake.area[0]<0.85*monthly_record.area.median()):
-         rgb = plot_rgb(raster,year=year,month=month)
-         rgb.savefig(FIG_DIRECTORY / 
-               f"RGB_{month_name[month]}_{year}.png")
-         fig = plot_raster(NDWI,vmin=-1,vmax=1,year=year,month=month)
-         fig.savefig(FIG_DIRECTORY / 
-               f"NDWI_{month_name[month]}_{year}.png")
+   lake,lake_shore = extract_polygon_lake(water,time_interval=interval)
+
+   try:
+      records = pd.concat([records, lake])
+   except:
+      records = lake.copy()
+
+   if(len(records)<=3): continue
+   elif(lake.area[0]<0.85*records.area.median()):
+      date = datetime.strptime(interval[0],"%Y-%m-%d")
+      rgb = plot_rgb(raster,sampling,date=date)
+      if(sampling == "monthly"):
+         title = f"RGB_{month_name[date.month]}_{date.year}.png"
+      else:
+         title = f"RGB_{date.day}_{month_name[date.month]}_{date.year}.png"
+      rgb.savefig(FIG_DIRECTORY / title)
+
+      fig = plot_raster(NDWI,sampling,vmin=-1,vmax=1,date=date)
+      if(sampling == "monthly"):
+         title = f"NDWI_{month_name[date.month]}_{date.year}.png"
+      else:
+         title = f"NDWI_{date.day}_{month_name[date.month]}_{date.year}.png"
+      fig.savefig(FIG_DIRECTORY / title)
 
 
 
 # Plots with EPSG:4326
 
-monthly_record.to_file(DATA_DIRECTORY / "lake_patzcuaro.gpkg")
+records.to_file(DATA_DIRECTORY / f"lake_patzcuaro_{sampling}.gpkg")
 
 
 
