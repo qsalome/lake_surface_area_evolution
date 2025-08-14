@@ -3,9 +3,39 @@ import geopandas
 import numpy as np
 import lmfit
 import fit_functions
+import calendar
+from datetime import datetime
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MultipleLocator
 
+
+#--------------------------------------------------------------------
+def convert_date2float(records_date):
+   """
+   Read the date as a string and convert it into a float
+   that can be used to plot and fit the data.
+   
+   Parameters
+   ----------
+   records_date: pandas.core.series.Series
+         string of the dates (%Y-%m-%d)
+
+   Returns
+   -------
+   numpy.array of float
+   """
+   datetimes  = [datetime.strptime(date,"%Y-%m-%d") for date in records_date]
+   timetuples = [date.timetuple() for date in datetimes]
+
+   dates = np.array([])
+   for date in timetuples:
+      if(calendar.isleap(date.tm_year)):
+         fdate = date.tm_year+(date.tm_yday-1)/366
+      else:
+         fdate = date.tm_year+(date.tm_yday-1)/365
+      dates = np.append(dates,fdate)
+
+   return dates
 
 #--------------------------------------------------------------------
 def fit_linear(y,x=None,err=None,method='leastsq'):
@@ -112,14 +142,22 @@ DATA_DIRECTORY = NOTEBOOK_PATH / "data"
 FIG_DIRECTORY  = NOTEBOOK_PATH / "figures"
 
 
-monthly_record = geopandas.read_file(DATA_DIRECTORY / "lake_patzcuaro.gpkg")
+daily_records   = geopandas.read_file(DATA_DIRECTORY / 
+                           "lake_patzcuaro_daily.gpkg")
+weekly_records  = geopandas.read_file(DATA_DIRECTORY /
+                           "lake_patzcuaro_weekly.gpkg")
+monthly_records = geopandas.read_file(DATA_DIRECTORY /
+                           "lake_patzcuaro_monthly.gpkg")
 
-areas = np.array(monthly_record.area)/1e6
-dates = np.array(monthly_record.year+(monthly_record.month-1)/12)
+k=0
+for records in [daily_records,weekly_records,monthly_records]:
+   areas = np.array(records.area)/1e6
+   dates = convert_date2float(records.date)
 
-fig,area = plot_surface_area_evolution(dates,areas)
-#area_evo = np.append(area_evo,f"{area:+.2}")
-fig.savefig(FIG_DIRECTORY / f"Surface_area_evolution.png")
+   fig,area = plot_surface_area_evolution(dates,areas)
+   #area_evo = np.append(area_evo,f"{area:+.2}")
+   fig.savefig(FIG_DIRECTORY / f"Surface_area_evolution_{k}.png")
 
+   k = k+1
 
 

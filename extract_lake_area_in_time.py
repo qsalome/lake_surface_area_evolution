@@ -51,7 +51,7 @@ def determine_time_intervals(total_interval,sampling,bbox):
    date_e = datetime.strptime(total_interval[1],"%Y-%m-%d")
    if(sampling=="monthly"):
       intervals = []
-      for year in tqdm(range(date_b.year,date_e.year,1)):
+      for year in range(date_b.year,date_e.year,1):
          for month in range(1,13,1):
             last_day = monthrange(year, month)[1]
             date1 = datetime(year,month,1)
@@ -253,7 +253,7 @@ def plot_rgb(raster,sampling,date=None):
    return fig
 
 #--------------------------------------------------------------------
-def plot_raster(raster,sampling,vmin=None,vmax=None,date=None):
+def plot_raster(raster,gdf,sampling,vmin=None,vmax=None,date=None):
    """
    Plot the raster image after projection to EPSG:4326.
    
@@ -275,12 +275,14 @@ def plot_raster(raster,sampling,vmin=None,vmax=None,date=None):
    """
    # Reproject to EPSG:4326
    raster = raster.rio.reproject("EPSG:4326")
+   gdf = gdf.to_crs("EPSG:4326")
 
    fig = plt.figure()
    ax = fig.add_subplot()
 
    im = raster.plot(ax=ax, cmap='terrain', vmin=vmin,vmax=vmax,
             add_colorbar=True)
+   gdf.boundary.plot(ax=ax, color='k')
 
    colorbar = im.colorbar
    if(sampling == "monthly"):
@@ -357,7 +359,7 @@ for interval in tqdm(intervals):
 
    # threshold for water body;
    # following McFeeters (2013): https://doi.org/10.3390/rs5073544 
-   water = NDWI.where(NDWI >= 0.3)
+   water = NDWI.where(NDWI > 0)
    water = water/water
 
    lake,lake_shore = extract_polygon_lake(water,time_interval=interval)
@@ -377,7 +379,7 @@ for interval in tqdm(intervals):
          title = f"RGB_{date.day}_{month_name[date.month]}_{date.year}.png"
       rgb.savefig(FIG_DIRECTORY / title)
 
-      fig = plot_raster(NDWI,sampling,vmin=-1,vmax=1,date=date)
+      fig = plot_raster(NDWI,lake,sampling,vmin=-1,vmax=1,date=date)
       if(sampling == "monthly"):
          title = f"NDWI_{month_name[date.month]}_{date.year}.png"
       else:
