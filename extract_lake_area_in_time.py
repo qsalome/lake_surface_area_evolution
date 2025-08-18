@@ -93,11 +93,11 @@ def read_sentinel(config,time_interval,bbox,epsg="EPSG:3067"):
          return {
             input: [{
                bands: ["B01","B02","B03","B04","B05","B06","B07",
-                       "B08","B8A","B09","B10","B11","B12"],
+                       "B08","B8A","B09","B11","B12"],
                units: "DN"
             }],
             output: {
-               bands: 13,
+               bands: 12,
                sampleType: "INT16"
             }
          };
@@ -114,7 +114,6 @@ def read_sentinel(config,time_interval,bbox,epsg="EPSG:3067"):
                  sample.B08,
                  sample.B8A,
                  sample.B09,
-                 sample.B10,
                  sample.B11,
                  sample.B12];
       }
@@ -125,8 +124,8 @@ def read_sentinel(config,time_interval,bbox,epsg="EPSG:3067"):
       evalscript=evalscript_all_bands,
       input_data=[
          SentinelHubRequest.input_data(
-            data_collection=DataCollection.SENTINEL2_L1C.define_from(
-               "s2l1c", service_url=config.sh_base_url
+            data_collection=DataCollection.SENTINEL2_L2A.define_from(
+               "s2l2a", service_url=config.sh_base_url
             ),
             time_interval=time_interval,
             mosaicking_order=MosaickingOrder.LEAST_CC,
@@ -149,6 +148,102 @@ def read_sentinel(config,time_interval,bbox,epsg="EPSG:3067"):
    os.system('rm -Rf tmp_dir/'+source_list[0])
 
    return raster
+
+#--------------------------------------------------------------------
+def derive_cloud_probabilities(raster):
+   """
+   Given a Sentinel data, estimate the cloud coverage following
+   the Sentinel 2 "Level-2A Algorithm Theoretical Basis Document"
+   https://sentiwiki.copernicus.eu/__attachments/1692737/
+   S2-PDGS-MPC-ATBD-L2A%20-%20Level%202A%20Algorithm%20Theoretical%20Basis
+   %20Document%202021%20-%202.10.pdf
+   
+   Parameters
+   ----------
+   raster: xarray.core.dataarray.DataArray
+         3d raster data from Sentinel
+
+   Returns
+   -------
+   xarray.core.dataarray.DataArray
+        2d raster data of the cloud coverage
+        (1: presence of clouds, 0: no clouds)
+   """
+
+   # Initiate the output
+   clouds = raster.sel(band=1)
+   clouds = clouds.where(clouds<0,0)
+   clouds = clouds.where(clouds!=-32768)
+
+
+   # Brightness threshold on red (Band 4)
+   red    = raster.sel(band=4)
+   clouds = clouds.where(red<2500,1)
+   clouds = clouds.where((red<=600)|(red>=2500),
+                         (red-600)/1900
+                        )
+   del red
+
+
+   # Normalized Difference Snow Index (NDSI)
+   band3  = raster.sel(band=3)
+   band11 = raster.sel(band=11)
+   NDSI   = (band3 - band11) / (band3 + band11)
+   clouds = clouds.where(NDSI<-0.16,1)
+   clouds = clouds.where((NDSI<=-0.24)|(NDSI>=-0.16),
+                         clouds*(NDSI+0.24)/0.08
+                        )
+   del band3,band11,NDSI
+
+
+   # Normalized Difference Vegetation Index (NDVI)
+   band4  = raster.sel(band=4)
+   band8a = raster.sel(band=9)
+   NDVI   = (band8a - band4) / (band8a + band4)
+   clouds = clouds.where(NDVI<0.42,0)
+   clouds = clouds.where((NDVI<=0.36)|(NDVI>=0.42),
+                         clouds*(1-(NDVI-0.36)/0.06)
+                        )
+   del band4,band8a,NDVI
+
+
+   # Not-vegetated pixels and water bodies
+   band2  = raster.sel(band=2)
+   band11 = raster.sel(band=11)
+   ratio  = band2/band11
+   clouds = clouds.where(ratio<=4.0,0)
+#   clouds = clouds.where((ratio>=0.70)&(ratio<=4.0),0)
+#   clouds = clouds.where((ratio<=0.70)|(ratio>=1.0),
+#                         clouds*(ratio-0.70)/0.3
+#                        )
+   clouds = clouds.where((ratio<=2.0)|(ratio>=4.0),
+                         clouds*(1-(ratio-2.0)/2.0)
+                        )
+   del band2,band11,ratio
+
+
+#   # Rock and sand pixels
+#   band8  = raster.sel(band=8)
+#   band11 = raster.sel(band=11)
+#   ratio  = band8/band11
+#   clouds = clouds.where(ratio>=0.90,0)
+#   clouds = clouds.where((ratio<=0.90)|(ratio>=1.10),
+#                         clouds*(ratio-0.90)/0.2
+#                        )
+#   del band8,band11,ratio
+
+
+#   # Band 4/Band 11 correction
+#   band4  = raster.sel(band=4)
+#   band11 = raster.sel(band=11)
+#   ratio  = band4/band11
+#   clouds = clouds.where(ratio<=6.0,0)
+#   clouds = clouds.where((ratio<=3.0)|(ratio>=6.0),
+#                         clouds*(1-(ratio-3.0)/3.0)
+#                        )
+#   del band4,band11,ratio
+
+   return clouds
 
 #--------------------------------------------------------------------
 def derive_NDWI(raster):
@@ -330,17 +425,19 @@ size = bbox_to_dimensions(bbox, resolution=resolution)
 
 
 
-#raster = read_sentinel(config,
-#            time_interval=(dates[0],dates[0]),
-#            epsg="EPSG:6369")
+raster = read_sentinel(config,time_interval=time_interval,bbox=bbox,
+            epsg="EPSG:6369")
 
-#NDWI  = derive_NDWI(raster)
+cl_proba = derive_cloud_probabilities(raster)
 
-#water = NDWI.where(NDWI > 0)
-#water = water/water
+NDWI  = derive_NDWI(raster)
+
+water = NDWI.where(NDWI > 0)
+water = water/water
 
 #lake,lake_shore = extract_polygon_lake(water)
 
+stop
 
 intervals = determine_time_intervals(time_interval,sampling,bbox)
 
@@ -351,6 +448,13 @@ for interval in tqdm(intervals):
 
    # do not continue if there is no data
    if(raster.max() == 0): continue
+
+##   # do not consider the data with high cloud coverage
+##   cl_cov = cloud_coverage()
+##   samp = where(cl_cov==1)[0]
+##   if(len(samp)>thres):
+##      plots
+##      continue
 
    NDWI  = derive_NDWI(raster)
 
