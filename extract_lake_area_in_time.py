@@ -93,11 +93,11 @@ def read_sentinel(config,time_interval,bbox,epsg="EPSG:3067"):
          return {
             input: [{
                bands: ["B01","B02","B03","B04","B05","B06","B07",
-                       "B08","B8A","B09","B11","B12"],
+                       "B08","B8A","B09","B11","B12","SCL"],
                units: "DN"
             }],
             output: {
-               bands: 12,
+               bands: 13,
                sampleType: "INT16"
             }
          };
@@ -115,7 +115,8 @@ def read_sentinel(config,time_interval,bbox,epsg="EPSG:3067"):
                  sample.B8A,
                  sample.B09,
                  sample.B11,
-                 sample.B12];
+                 sample.B12,
+                 sample.SCL];
       }
    """
 
@@ -157,6 +158,8 @@ def derive_cloud_probabilities(raster):
    https://sentiwiki.copernicus.eu/__attachments/1692737/
    S2-PDGS-MPC-ATBD-L2A%20-%20Level%202A%20Algorithm%20Theoretical%20Basis
    %20Document%202021%20-%202.10.pdf
+   Not used: the removal of "not-vegetated pixels and water bodies"
+   is not implemented corrected
    
    Parameters
    ----------
@@ -222,28 +225,64 @@ def derive_cloud_probabilities(raster):
    del band2,band11,ratio
 
 
-#   # Rock and sand pixels
-#   band8  = raster.sel(band=8)
-#   band11 = raster.sel(band=11)
-#   ratio  = band8/band11
-#   clouds = clouds.where(ratio>=0.90,0)
-#   clouds = clouds.where((ratio<=0.90)|(ratio>=1.10),
-#                         clouds*(ratio-0.90)/0.2
-#                        )
-#   del band8,band11,ratio
+   # Rock and sand pixels
+   band8  = raster.sel(band=8)
+   band11 = raster.sel(band=11)
+   ratio  = band8/band11
+   clouds = clouds.where(ratio>=0.90,0)
+   clouds = clouds.where((ratio<=0.90)|(ratio>=1.10),
+                         clouds*(ratio-0.90)/0.2
+                        )
+   del band8,band11,ratio
 
 
-#   # Band 4/Band 11 correction
-#   band4  = raster.sel(band=4)
-#   band11 = raster.sel(band=11)
-#   ratio  = band4/band11
-#   clouds = clouds.where(ratio<=6.0,0)
-#   clouds = clouds.where((ratio<=3.0)|(ratio>=6.0),
-#                         clouds*(1-(ratio-3.0)/3.0)
-#                        )
-#   del band4,band11,ratio
+   # Band 4/Band 11 correction
+   band4  = raster.sel(band=4)
+   band11 = raster.sel(band=11)
+   ratio  = band4/band11
+   clouds = clouds.where(ratio<=6.0,0)
+   clouds = clouds.where((ratio<=3.0)|(ratio>=6.0),
+                         clouds*(1-(ratio-3.0)/3.0)
+                        )
+   del band4,band11,ratio
+
+   clouds = clouds.where(clouds==clouds,-32768)
 
    return clouds
+
+#--------------------------------------------------------------------
+def derive_cloud_fraction(raster,cl_proba_thres=0.5):
+   """
+   Given a raster of cloud probability or cloud classification,
+   derive the fraction of cloud coverage.
+   
+   Parameters
+   ----------
+   raster: xarray.core.dataarray.DataArray
+         2d raster data of the cloud probability or cloud
+         classification
+
+   cl_proba_thres: float
+         Minimum cloud probability to consider to derive
+         the cloud coverage
+
+   Returns
+   -------
+   float
+   """
+
+   raster = raster.where(raster!=-32768)
+
+   # Area of the map in pixels
+   map_area   = len(np.where(np.isfinite(raster.to_numpy()))[0])
+
+   # Area covered by clouds in pixels
+   if(raster.max()<=1):
+      cloud_area = len(np.where(raster.to_numpy()>=cl_proba_thres)[0])
+   else:
+      cloud_area = len(np.where(raster.to_numpy()>=8)[0])
+
+   return cloud_area/map_area
 
 #--------------------------------------------------------------------
 def derive_NDWI(raster):
@@ -286,11 +325,12 @@ def extract_polygon_lake(water,time_interval):
         2d raster data of the NDWI
    """
 
-   gdf = vectorize(water.astype("float32"))
-   gdf = gdf[~np.isnan(gdf["_data"])]
-   gdf["area"] = gdf.area
-   poly = gdf[gdf["area"] == np.max(gdf["area"])].reset_index()
-   poly['date']  = time_interval[0]
+   water = water.rename("water")
+   gdf   = vectorize(water.astype("float32"))
+   gdf   = gdf[~np.isnan(gdf["water"])]
+   gdf["area"]  = gdf.area
+   poly  = gdf[gdf["area"] == np.max(gdf["area"])].reset_index()
+   poly['date'] = time_interval[0]
 
    line = poly.geometry.values[0]
    line = LineString(line.exterior)
@@ -348,7 +388,8 @@ def plot_rgb(raster,sampling,date=None):
    return fig
 
 #--------------------------------------------------------------------
-def plot_raster(raster,gdf,sampling,vmin=None,vmax=None,date=None):
+def plot_raster(raster,gdf=None,sampling='monthly',
+   vmin=None,vmax=None,date=None):
    """
    Plot the raster image after projection to EPSG:4326.
    
@@ -370,14 +411,18 @@ def plot_raster(raster,gdf,sampling,vmin=None,vmax=None,date=None):
    """
    # Reproject to EPSG:4326
    raster = raster.rio.reproject("EPSG:4326")
-   gdf = gdf.to_crs("EPSG:4326")
+   raster = raster.where(raster>-32768)
 
    fig = plt.figure()
    ax = fig.add_subplot()
 
    im = raster.plot(ax=ax, cmap='terrain', vmin=vmin,vmax=vmax,
             add_colorbar=True)
-   gdf.boundary.plot(ax=ax, color='k')
+   try:
+      gdf = gdf.to_crs("EPSG:4326")
+      gdf.boundary.plot(ax=ax, color='k')
+   except:
+      pass
 
    colorbar = im.colorbar
    if(sampling == "monthly"):
@@ -395,7 +440,7 @@ def plot_raster(raster,gdf,sampling,vmin=None,vmax=None,date=None):
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-b", "--beginning", type=str,
-                    default='2015-06-01',
+                    default='2016-10-01',
                     help="Initial date of interest ('YYYY-MM-DD')")
 parser.add_argument("-e", "--end",       type=str,
                     default=datetime.now().strftime("%Y-%m-%d"),
@@ -420,24 +465,30 @@ FIG_DIRECTORY  = NOTEBOOK_PATH / "figures"
 config = SHConfig()
 
 resolution = 60
-bbox=BBox((-101.747131,19.711122,-101.503372,19.524847),crs=CRS.WGS84)
+bbox=BBox((-101.714516,19.693991,-101.527405,19.532289),crs=CRS.WGS84)
 size = bbox_to_dimensions(bbox, resolution=resolution)
 
+cl_proba_thres   = 0.5
+cloud_area_thres = 0.2
 
 
-raster = read_sentinel(config,time_interval=time_interval,bbox=bbox,
-            epsg="EPSG:6369")
+#raster = read_sentinel(config,time_interval=time_interval,bbox=bbox,
+#            epsg="EPSG:6369")
 
-cl_proba = derive_cloud_probabilities(raster)
+#cl_proba = raster.sel(band=13)
+#cl_frac  = derive_cloud_fraction(cl_proba)
 
-NDWI  = derive_NDWI(raster)
+#cl_proba = derive_cloud_probabilities(raster)
+#cl_frac  = derive_cloud_fraction(cl_proba,cl_proba_thres=cl_proba_thres)
 
-water = NDWI.where(NDWI > 0)
-water = water/water
+#NDWI  = derive_NDWI(raster)
+
+#water = NDWI.where(NDWI > 0)
+#water = water/water
 
 #lake,lake_shore = extract_polygon_lake(water)
 
-stop
+
 
 intervals = determine_time_intervals(time_interval,sampling,bbox)
 
@@ -449,12 +500,26 @@ for interval in tqdm(intervals):
    # do not continue if there is no data
    if(raster.max() == 0): continue
 
-##   # do not consider the data with high cloud coverage
-##   cl_cov = cloud_coverage()
-##   samp = where(cl_cov==1)[0]
-##   if(len(samp)>thres):
-##      plots
-##      continue
+   # do not consider the data with high cloud coverage
+#   cl_proba = derive_cloud_probabilities(raster)
+#   cl_frac  = derive_cloud_fraction(cl_proba,cl_proba_thres=cl_proba_thres)
+
+   cl_proba = raster.sel(band=13)
+   cl_frac  = derive_cloud_fraction(cl_proba)
+
+   if(cl_frac>cloud_area_thres):
+      date = datetime.strptime(interval[0],"%Y-%m-%d")
+      rgb = plot_rgb(raster,sampling,date=date)
+      if(sampling == "monthly"):
+         title = f"{cl_frac:.2f}_RGB_{month_name[date.month]}_{date.year}.png"
+      else:
+         title = f"RGB_{date.day}_{month_name[date.month]}_{date.year}.png"
+      rgb.savefig(FIG_DIRECTORY / 'RGB' / title)
+
+      fig = plot_raster(cl_proba,sampling=sampling,vmin=0,date=date)
+      title = f"{cl_frac:.2f}_Cloud_proba_{month_name[date.month]}_{date.year}.png"
+      fig.savefig(FIG_DIRECTORY / 'Cloud_proba' / title)
+      continue
 
    NDWI  = derive_NDWI(raster)
 
@@ -477,24 +542,19 @@ for interval in tqdm(intervals):
    elif(lake.area[0]<0.85*records.area.median()):
       date = datetime.strptime(interval[0],"%Y-%m-%d")
       rgb = plot_rgb(raster,sampling,date=date)
-      if(sampling == "monthly"):
-         title = f"RGB_{month_name[date.month]}_{date.year}.png"
-      else:
-         title = f"RGB_{date.day}_{month_name[date.month]}_{date.year}.png"
-      rgb.savefig(FIG_DIRECTORY / title)
 
       fig = plot_raster(NDWI,lake,sampling,vmin=-1,vmax=1,date=date)
       if(sampling == "monthly"):
-         title = f"NDWI_{month_name[date.month]}_{date.year}.png"
+         title = f"{cl_frac:.2f}_NDWI_{month_name[date.month]}_{date.year}.png"
       else:
-         title = f"NDWI_{date.day}_{month_name[date.month]}_{date.year}.png"
-      fig.savefig(FIG_DIRECTORY / title)
-
+         title = f"{cl_frac:.2f}_NDWI_{date.day}_{month_name[date.month]}_{date.year}.png"
+      fig.savefig(FIG_DIRECTORY / 'NDWI' / title)
 
 
 # Plots with EPSG:4326
 
-records.to_file(DATA_DIRECTORY / f"lake_patzcuaro_{sampling}.gpkg")
+records.to_file(DATA_DIRECTORY / f"lake_patzcuaro.gpkg",
+         layer=f'{sampling}',mode='a')
 
 
 
