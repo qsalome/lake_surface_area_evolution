@@ -1,4 +1,5 @@
 import os
+import json
 import pathlib
 import argparse
 import numpy as np
@@ -462,99 +463,86 @@ DATA_DIRECTORY = NOTEBOOK_PATH / "data"
 FIG_DIRECTORY  = NOTEBOOK_PATH / "figures"
 
 
+with open(DATA_DIRECTORY / "lakes_mexico_catalogue.json") as file:
+   dict = json.load(file)
+
+
 config = SHConfig()
 
 resolution = 60
-bbox=BBox((-101.714516,19.693991,-101.527405,19.532289),crs=CRS.WGS84)
-size = bbox_to_dimensions(bbox, resolution=resolution)
-
 cl_proba_thres   = 0.5
 cloud_area_thres = 0.2
 
 
-#raster = read_sentinel(config,time_interval=time_interval,bbox=bbox,
-#            epsg="EPSG:6369")
-
-#cl_proba = raster.sel(band=13)
-#cl_frac  = derive_cloud_fraction(cl_proba)
-
-#cl_proba = derive_cloud_probabilities(raster)
-#cl_frac  = derive_cloud_fraction(cl_proba,cl_proba_thres=cl_proba_thres)
-
-#NDWI  = derive_NDWI(raster)
-
-#water = NDWI.where(NDWI > 0)
-#water = water/water
-
-#lake,lake_shore = extract_polygon_lake(water)
+for key in dict:
+   lake_name = key
+   print(lake_name)
+   bbox=BBox(tuple(dict[key]),crs=CRS.WGS84)
+   size = bbox_to_dimensions(bbox, resolution=resolution)
 
 
 
-intervals = determine_time_intervals(time_interval,sampling,bbox)
+   #raster = read_sentinel(config,time_interval=time_interval,bbox=bbox,
+   #            epsg="EPSG:6369")
+
+   #cl_proba = raster.sel(band=13)
+   #cl_frac  = derive_cloud_fraction(cl_proba)
+
+   #cl_proba = derive_cloud_probabilities(raster)
+   #cl_frac  = derive_cloud_fraction(cl_proba,cl_proba_thres=cl_proba_thres)
+
+   #NDWI  = derive_NDWI(raster)
+
+   #water = NDWI.where(NDWI > 0)
+   #water = water/water
+
+   #lake,lake_shore = extract_polygon_lake(water)
 
 
-for interval in tqdm(intervals):
-   raster = read_sentinel(config,time_interval=interval,bbox=bbox,
-         epsg="EPSG:6369")
 
-   # do not continue if there is no data
-   if(raster.max() == 0): continue
-
-   # do not consider the data with high cloud coverage
-#   cl_proba = derive_cloud_probabilities(raster)
-#   cl_frac  = derive_cloud_fraction(cl_proba,cl_proba_thres=cl_proba_thres)
-
-   cl_proba = raster.sel(band=13)
-   cl_frac  = derive_cloud_fraction(cl_proba)
-
-   if(cl_frac>cloud_area_thres):
-      date = datetime.strptime(interval[0],"%Y-%m-%d")
-      rgb = plot_rgb(raster,sampling,date=date)
-      if(sampling == "monthly"):
-         title = f"{cl_frac:.2f}_RGB_{month_name[date.month]}_{date.year}.png"
-      else:
-         title = f"RGB_{date.day}_{month_name[date.month]}_{date.year}.png"
-      rgb.savefig(FIG_DIRECTORY / 'RGB' / title)
-
-      fig = plot_raster(cl_proba,sampling=sampling,vmin=0,date=date)
-      title = f"{cl_frac:.2f}_Cloud_proba_{month_name[date.month]}_{date.year}.png"
-      fig.savefig(FIG_DIRECTORY / 'Cloud_proba' / title)
-      continue
-
-   NDWI  = derive_NDWI(raster)
-
-   # do not continue if the data are not good (likely due to clouds)
-   if(NDWI.max() < 0.3): continue
-
-   # threshold for water body;
-   # following McFeeters (2013): https://doi.org/10.3390/rs5073544 
-   water = NDWI.where(NDWI > 0)
-   water = water/water
-
-   lake,lake_shore = extract_polygon_lake(water,time_interval=interval)
-
-   try:
-      records = pd.concat([records, lake])
-   except:
-      records = lake.copy()
-
-   if(len(records)<=3): continue
-   elif(lake.area[0]<0.85*records.area.median()):
-      date = datetime.strptime(interval[0],"%Y-%m-%d")
-      rgb = plot_rgb(raster,sampling,date=date)
-
-      fig = plot_raster(NDWI,lake,sampling,vmin=-1,vmax=1,date=date)
-      if(sampling == "monthly"):
-         title = f"{cl_frac:.2f}_NDWI_{month_name[date.month]}_{date.year}.png"
-      else:
-         title = f"{cl_frac:.2f}_NDWI_{date.day}_{month_name[date.month]}_{date.year}.png"
-      fig.savefig(FIG_DIRECTORY / 'NDWI' / title)
+   intervals = determine_time_intervals(time_interval,sampling,bbox)
 
 
-# Plots with EPSG:4326
+   for interval in tqdm(intervals):
+      raster = read_sentinel(config,time_interval=interval,bbox=bbox,
+            epsg="EPSG:6369")
 
-records.to_file(DATA_DIRECTORY / f"lake_patzcuaro.gpkg",
-         layer=f'{sampling}',mode='a')
+      # do not continue if there is no data
+      if(raster.max() == 0): continue
+
+      # do not consider the data with high cloud coverage
+   #   cl_proba = derive_cloud_probabilities(raster)
+   #   cl_frac  = derive_cloud_fraction(cl_proba,cl_proba_thres=cl_proba_thres)
+
+      cl_proba = raster.sel(band=13)
+      cl_frac  = derive_cloud_fraction(cl_proba)
+
+      if(cl_frac>cloud_area_thres):
+         continue
+
+      NDWI  = derive_NDWI(raster)
+
+      # do not continue if the data are not good (likely due to clouds)
+      if(NDWI.max() < 0.3): continue
+
+      # threshold for water body;
+      # following McFeeters (2013): https://doi.org/10.3390/rs5073544 
+      water = NDWI.where(NDWI > 0)
+      water = water/water
+
+      lake,lake_shore = extract_polygon_lake(water,time_interval=interval)
+
+      try:
+         records = pd.concat([records, lake])
+      except:
+         records = lake.copy()
+
+
+
+   # Plots with EPSG:4326
+
+   records.to_file(DATA_DIRECTORY / f"{lake_name}_lake_evolution.gpkg",
+            layer=f'{sampling}',mode='a')
 
 
 
