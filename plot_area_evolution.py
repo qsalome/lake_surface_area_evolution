@@ -1,3 +1,4 @@
+import json
 import pathlib
 import pandas as pd
 import geopandas
@@ -161,8 +162,8 @@ def plot_surface_area_evolution(areas,lake_name=""):
    ax.tick_params(labelright=True,right=True,which='both')
    ax.xaxis.set_major_locator(MultipleLocator(1))
    ax.xaxis.set_minor_locator(MultipleLocator(1/6))
-   ax.yaxis.set_major_locator(MultipleLocator(5))
-   ax.yaxis.set_minor_locator(MultipleLocator(1))
+#   ax.yaxis.set_major_locator(MultipleLocator(5))
+#   ax.yaxis.set_minor_locator(MultipleLocator(1))
 
    fig.tight_layout()
 
@@ -177,39 +178,62 @@ DATA_DIRECTORY = NOTEBOOK_PATH / "data"
 FIG_DIRECTORY  = NOTEBOOK_PATH / "figures"
 
 
-areas = pd.DataFrame(columns=["date","float_date"]+[f"area_{sampling}"
-            for sampling in ["daily","weekly","monthly"]])
-
-lake_name="Patzcuaro"
-
-for sampling in ["weekly","monthly"]:
-   records   = geopandas.read_file(DATA_DIRECTORY / 
-                           f"{lake_name}_lake_evolution.gpkg",
-                           layer=f"{sampling}")
-
-   for i in range(len(records)):
-      entry = records.iloc[i]
-      d = {"date": entry['date'],
-           "float_date": convert_date2float(entry['date'])
-          }
-      if(sampling=="daily"):
-         d[f"area_daily"]   = [entry['geometry'].area/1e6]
-         d[f"area_weekly"]  = [np.nan]
-         d[f"area_monthly"] = [np.nan]
-      elif(sampling=="weekly"):
-         d[f"area_daily"]   = [np.nan]
-         d[f"area_weekly"]  = [entry['geometry'].area/1e6]
-         d[f"area_monthly"] = [np.nan]
-      elif(sampling=="monthly"):
-         d[f"area_daily"]   = [np.nan]
-         d[f"area_weekly"]  = [np.nan]
-         d[f"area_monthly"] = [entry['geometry'].area/1e6]
-
-      new_row = pd.DataFrame(d)
-      areas   = pd.concat([areas, new_row], ignore_index=True)
+with open(DATA_DIRECTORY / "lakes_mexico_catalogue.json") as file:
+   dict = json.load(file)
 
 
-fig,area = plot_surface_area_evolution(areas,lake_name=lake_name)
-fig.savefig(FIG_DIRECTORY / f"Surface_area_evolution_{lake_name}.png")
+area_evo = np.array([])
+for lake_name in ["Patzcuaro"]:#dict:
+   areas = pd.DataFrame(columns=["date","float_date"]+[f"area_{sampling}"
+               for sampling in ["daily","weekly","monthly"]])
+
+   for sampling in ["monthly"]:
+      records   = geopandas.read_file(DATA_DIRECTORY / 
+                              f"{lake_name}_lake_evolution.gpkg",
+                              layer=f"{sampling}")
+
+      for i in range(len(records)):
+         entry = records.iloc[i]
+         d = {"date": entry['date'],
+              "float_date": convert_date2float(entry['date'])
+             }
+         if(sampling=="daily"):
+            d[f"area_daily"]   = [entry['geometry'].area/1e6]
+            d[f"area_weekly"]  = [np.nan]
+            d[f"area_monthly"] = [np.nan]
+         elif(sampling=="weekly"):
+            d[f"area_daily"]   = [np.nan]
+            d[f"area_weekly"]  = [entry['geometry'].area/1e6]
+            d[f"area_monthly"] = [np.nan]
+         elif(sampling=="monthly"):
+            d[f"area_daily"]   = [np.nan]
+            d[f"area_weekly"]  = [np.nan]
+            d[f"area_monthly"] = [entry['geometry'].area/1e6]
+
+         new_row = pd.DataFrame(d)
+         areas   = pd.concat([areas, new_row], ignore_index=True)
+
+      if(sampling == "monthly"):
+         # Select the entry with the larger area (95th-percentile)
+         perc95 = np.percentile(records.area,95)
+         diff   = np.absolute(records.area-perc95)
+         lake   = records[diff == np.min(diff)].reset_index()
+         lake["LAKE_NAME"] = lake_name
+         lake["AREA_KM2"] = lake.area/1e6
+
+         try:
+            lakes = pd.concat([lakes,lake[['LAKE_NAME','AREA_KM2','geometry']]],
+                  ignore_index=True)
+         except:
+            lakes = lake[['LAKE_NAME','AREA_KM2','geometry']].copy()
+
+   fig,area = plot_surface_area_evolution(areas,lake_name=lake_name)
+   fig.savefig(FIG_DIRECTORY / f"Surface_area_evolution_{lake_name}.png")
+
+   area_evo = np.append(area_evo,f"{area:+.2}")
+
+lakes["AREA_EVO"] = area_evo
+lakes.to_file(DATA_DIRECTORY /
+      "lakes_surface_area_evolution.gpkg")
 
 
