@@ -518,6 +518,17 @@ for key in dict:
       cl_frac  = derive_cloud_fraction(cl_proba)
 
       if(cl_frac>cloud_area_thres):
+         date = datetime.strptime(interval[0],"%Y-%m-%d")
+         rgb = plot_rgb(raster,sampling,date=date)
+         title = f"{lake_name}_frac{cl_frac:.2f}_"
+         if(sampling == "monthly"):
+            title += f"{month_name[date.month]}_{date.year}.png"
+         else:
+            title += f"_{date.day}_{month_name[date.month]}_{date.year}.png"
+         rgb.savefig(FIG_DIRECTORY / 'RGB' / title)
+
+         fig = plot_raster(cl_proba,sampling=sampling,vmin=0,date=date)
+         fig.savefig(FIG_DIRECTORY / 'Cloud_proba' / title)
          continue
 
       NDWI  = derive_NDWI(raster)
@@ -537,12 +548,24 @@ for key in dict:
       except:
          records = lake.copy()
 
+      if(len(records)<=3): continue
+      elif(lake.area[0]<0.85*records.area.median()):
+         date = datetime.strptime(interval[0],"%Y-%m-%d")
+         rgb = plot_rgb(raster,sampling,date=date)
+
+         fig = plot_raster(NDWI,lake,sampling,vmin=-1,vmax=1,date=date)
+         title = f"{lake_name}_frac{cl_frac:.2f}_"
+         if(sampling == "monthly"):
+            title += f"{month_name[date.month]}_{date.year}.png"
+         else:
+            title += f"{date.day}_{month_name[date.month]}_{date.year}.png"
+         fig.savefig(FIG_DIRECTORY / 'NDWI' / title)
 
 
    # Plots with EPSG:4326
 
    records.to_file(DATA_DIRECTORY / f"{lake_name}_lake_evolution.gpkg",
             layer=f'{sampling}',mode='a')
-
+   del records
 
 
