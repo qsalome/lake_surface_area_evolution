@@ -272,7 +272,7 @@ lakes = lakes_with_country()
 
 # Initial map
 interactive_map = folium.Map(
-    max_bounds=True,
+#    max_bounds=True,
     location=[19.7,-101.3],
     zoom_start=10,
     min_lat=19.4,
