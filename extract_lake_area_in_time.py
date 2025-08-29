@@ -52,7 +52,7 @@ def determine_time_intervals(total_interval,sampling,bbox):
    date_e = datetime.strptime(total_interval[1],"%Y-%m-%d")
    if(sampling=="monthly"):
       intervals = []
-      for year in range(date_b.year,date_e.year,1):
+      for year in range(date_b.year,date_e.year+1,1):
          for month in range(1,13,1):
             last_day = monthrange(year, month)[1]
             date1 = datetime(year,month,1)
