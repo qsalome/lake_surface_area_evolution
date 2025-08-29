@@ -20,10 +20,9 @@ The project is based on Python 3.10. I recommend to use conda and the provided
 The project uses Copernicus Sentinel-2 at 60m resolution that are accessed via
 the Sentinel Hub API of the Copernicus database.
 
-You first need to configurate a new sentinelhub
-:class:`~sentinelhub.config.SHConfig` object. You can use the provided
-`sentinelhub_config.py` script which will create the configuration file
-``~/.config/sentinelhub/config.toml``. 
+You first need to configurate a new sentinelhub `SHConfig` object. You can use
+the provided `sentinelhub_config.py` script which will create the configuration
+file ``~/.config/sentinelhub/config.toml``.
 
 You will need to replace `your_sh_client_id` with your client ID and
 `your_sh_client_secret` with your client secret. To obtain these credentials,
@@ -39,8 +38,7 @@ To extract the monthly lake surface over time:
 By default, the script covers the period between 1st October 2016 and the
 current day. To cover the full 2017 year:
 
-    $ python extract_lake_area_in_time.py --sampling monthly
-    --beginning '2017-01-01' --end '2017-12-31'
+    $ python extract_lake_area_in_time.py --sampling monthly --beginning '2017-01-01' --end '2017-12-31'
 
 
 To plot the evolution of the lake surface in time:
