@@ -21,29 +21,17 @@ from jinja2 import Template
 #--------------------------------------------------------------------
 def lakes_with_country():
    """
-   Produce a new layer based on raster data
+   Read the GeoDataFrame of the lakes and associate them the country
+   where they are located. Based on the countries land boundaries
+   from https://www.naturalearthdata.com/downloads/10m-cultural-vectors/
    
    Parameters
    ----------
-   raster: xarray.core.dataarray.DataArray
-         2d raster data to include
-   name: str
-         Name of the layer
-   visible: boolean
-         Define if the layer will be displayed when opening the map
-   year: int
-         year to be added in name
-   month: int
-         month to be added in name
-   day: int
-         day to be added in name
 
    Returns
    -------
-   layer: folium.features.GeoJson
-         layer to be added to the interactive map
-   cmap: branca.colormap.LinearColormap
-         corresponding color map
+   geopandas.geodataframe.GeoDataFrame
+         lakes with the associated country
    """
 
    countries = geopandas.read_file(DATA_DIRECTORY /
@@ -182,13 +170,11 @@ def new_polygon_layer(gdf,name="",image=None):
    Parameters
    ----------
    gdf: geopandas.geodataframe.GeoDataFrame
-         Municipalities of interest with temperatures information
+         Lakes with surface area information
    name: str
          Name of the layer
    image: str
          Path of the image to be included in a popup
-   lake_name: str
-         name of the lake to be added in image name
 
    Returns
    -------
