@@ -5,7 +5,7 @@ from stellite Earth observations and study the evolution of their surface with
 time. The project is based on Earth observations from the Copernicus Sentinel-2
 mission (https://sentinels.copernicus.eu/web/sentinel/copernicus/sentinel-2).
 However, with a little bit of work, it could be adapted to other Earth
-Earth observations. The GitHub repository is
+observations. The GitHub repository is
 [here](https://github.com/qsalome/lake_surface_area_evolution).
 
 ## Install
