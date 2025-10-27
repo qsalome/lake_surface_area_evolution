@@ -8,8 +8,32 @@ import fit_functions
 import calendar
 from datetime import datetime
 import matplotlib.pyplot as plt
+from matplotlib.dates import YearLocator,MonthLocator
 from matplotlib.ticker import MultipleLocator
 
+
+#--------------------------------------------------------------------
+def convert_date2float(date):
+   """
+   Read the date as a string and convert it into a float
+   that can be used to plot and fit the data.
+   
+   Parameters
+   ----------
+   date: datetime.datetime or timestamps.Timestamp
+
+   Returns
+   -------
+   numpy.array of float
+   """
+   timetuple = date.timetuple()
+
+   if(calendar.isleap(timetuple.tm_year)):
+      fdate = timetuple.tm_year+(timetuple.tm_yday-1)/366
+   else:
+      fdate = timetuple.tm_year+(timetuple.tm_yday-1)/365
+
+   return fdate
 
 #--------------------------------------------------------------------
 def fit_linear(y,x=None,err=None,method='leastsq'):
@@ -68,10 +92,10 @@ def plot_surface_area_evolution(areas,lake_name=""):
    matplotlib.figure.Figure
          Evolution of the monthly surface area of the lake.
    """
-   #areas = areas.sort_values(by=['float_date'])
 
    # Read the temperature for the selected city
-   dates   = areas["float_date"].to_numpy()
+   dates   = areas["date"].to_numpy()
+   fdates  = np.array([convert_date2float(date) for date in areas['date']])
    daily   = areas["area_daily"].to_numpy()
    weekly  = areas["area_weekly"].to_numpy()
    monthly = areas["area_monthly"].to_numpy()
@@ -84,42 +108,30 @@ def plot_surface_area_evolution(areas,lake_name=""):
    fig,ax = plt.subplots(figsize=(10,7))
 
    ### Plot monthly records
-   ax.scatter(dates,monthly, marker='o', s=8,color='black')
-   ax.plot(dates,monthly, 'k-')
+   samp = np.where(np.isfinite(monthly))
+   ax.scatter(dates,monthly, marker='o', s=8,color='black',zorder=2)
+   ax.plot(dates[samp],monthly[samp], 'k-',zorder=2)
 
    samp = np.where((np.isfinite(monthly))&
                    (monthly>np.nanpercentile(monthly,5))&
                    (monthly<np.nanpercentile(monthly,95)))
-   model = fit_linear(monthly[samp],x=dates[samp])
+   model = fit_linear(monthly[samp],x=fdates[samp])
    area_evo = (model[-1]-model[0])/model[0]*100
-   ax.plot(dates[samp],model,'b--',
+   ax.plot(dates[samp],model,'b--',zorder=3,
                label=f'surface area: {area_evo:+.2f}%')
+   print(area_evo)
 
 
    ### Plot weekly records
-   ax.scatter(dates,weekly, marker='o', s=8,color='red')
-   ax.plot(dates,weekly, 'r-')
-
-   samp = np.where((np.isfinite(weekly))&
-                   (weekly>np.nanpercentile(weekly,5))&
-                   (weekly<np.nanpercentile(weekly,95)))
-   model = fit_linear(weekly[samp],x=dates[samp])
-   area_evo = (model[-1]-model[0])/model[0]*100
-   ax.plot(dates[samp],model,'r--',
-               label=f'surface area: {area_evo:+.2f}%')
+   samp = np.where(np.isfinite(weekly))
+   ax.scatter(dates,weekly, marker='o', s=8,color='red',zorder=1,alpha=0.5)
+   ax.plot(dates[samp],weekly[samp], 'r-',zorder=1,alpha=0.5)
 
 
    ### Plot daily records
-   ax.scatter(dates,daily, marker='o', s=8,color='green')
-   ax.plot(dates,daily, 'g-')
-
-   samp = np.where((np.isfinite(daily))&
-                   (daily>np.nanpercentile(daily,5))&
-                   (daily<np.nanpercentile(daily,95)))
-   model = fit_linear(daily[samp],x=dates[samp])
-   area_evo = (model[-1]-model[0])/model[0]*100
-   ax.plot(dates[samp],model,'b--',
-               label=f'surface area: {area_evo:+.2f}%')
+#   samp = np.where(np.isfinite(daily))
+#   ax.scatter(dates,daily, marker='o', s=8,color='green')
+#   ax.plot(dates[samp],daily[samp], 'g-')
 
    ax.legend(loc='upper right')
 
@@ -129,8 +141,8 @@ def plot_surface_area_evolution(areas,lake_name=""):
    plt.ylim([0.9*y_min,1.1*y_max])
 
    ax.tick_params(labelright=True,right=True,which='both')
-   ax.xaxis.set_major_locator(MultipleLocator(1))
-   ax.xaxis.set_minor_locator(MultipleLocator(1/6))
+   ax.xaxis.set_major_locator(YearLocator(1))
+   ax.xaxis.set_minor_locator(MonthLocator(interval=3))
 #   ax.yaxis.set_major_locator(MultipleLocator(5))
 #   ax.yaxis.set_minor_locator(MultipleLocator(1))
 
@@ -155,34 +167,21 @@ area_evo = np.array([])
 for lake_name in ["Patzcuaro"]:#dict:
    areas = pd.DataFrame(columns=["date"]+[f"area_{sampling}"
                for sampling in ["daily","weekly","monthly"]])
+   areas['date'] = pd.to_datetime(areas['date'])
 
    for sampling in ["daily","weekly","monthly"]:
       try:
          records   = geopandas.read_file(DATA_DIRECTORY / 
                                  f"{lake_name}_lake_evolution.gpkg",
                                  layer=f"{sampling}")
+         records['date'] = pd.to_datetime(records['date'])
       except:
          continue
 
-      for i in range(len(records)):
-         entry = records.iloc[i]
-         date = datetime.strptime(entry['date'],"%Y-%m-%d")
-         d = {"date": date}
-         if(sampling=="daily"):
-            d[f"area_daily"]   = [entry['geometry'].area/1e6]
-            d[f"area_weekly"]  = [np.nan]
-            d[f"area_monthly"] = [np.nan]
-         elif(sampling=="weekly"):
-            d[f"area_daily"]   = [np.nan]
-            d[f"area_weekly"]  = [entry['geometry'].area/1e6]
-            d[f"area_monthly"] = [np.nan]
-         elif(sampling=="monthly"):
-            d[f"area_daily"]   = [np.nan]
-            d[f"area_weekly"]  = [np.nan]
-            d[f"area_monthly"] = [entry['geometry'].area/1e6]
-
-         new_row = pd.DataFrame(d)
-         areas   = pd.concat([areas, new_row], ignore_index=True)
+      records[f"area_{sampling}"] = records.area/1e6
+      areas = pd.merge(areas,records[["date",f"area_{sampling}"]],
+                 how='outer',on=['date',f"area_{sampling}"])
+      areas = areas.astype({f"area_{sampling}": 'float'})
 
       if(sampling == "monthly"):
          # Select the entry with the larger area (95th-percentile)
