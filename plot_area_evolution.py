@@ -119,7 +119,7 @@ def plot_surface_area_evolution(areas,lake_name=""):
                       (monthly<np.nanpercentile(monthly,95)))
       model = fit_linear(monthly[samp],x=dates[samp])
       area_evo = (model[-1]-model[0])/model[0]*100
-      ax.plot(dates[samp],model,'k--',
+      ax.plot(dates[samp],model,'b--',
                   label=f'surface area: {area_evo:+.2f}%')
 
 
@@ -142,7 +142,7 @@ def plot_surface_area_evolution(areas,lake_name=""):
    samp = np.where(np.isfinite(daily))
    if(len(samp[0]>0)):
       ax.scatter(dates,daily, marker='o', s=8,color='blue')
-      ax.plot(dates,daily, 'b-')
+      ax.plot(dates,daily, 'r-')
 
       samp = np.where((np.isfinite(daily))&
                       (daily>np.nanpercentile(daily,5))&
@@ -187,10 +187,13 @@ for lake_name in ["Patzcuaro"]:#dict:
    areas = pd.DataFrame(columns=["date","float_date"]+[f"area_{sampling}"
                for sampling in ["daily","weekly","monthly"]])
 
-   for sampling in ["monthly"]:
-      records   = geopandas.read_file(DATA_DIRECTORY / 
-                              f"{lake_name}_lake_evolution.gpkg",
-                              layer=f"{sampling}")
+   for sampling in ["daily","weekly","monthly"]:
+      try:
+         records   = geopandas.read_file(DATA_DIRECTORY / 
+                                 f"{lake_name}_lake_evolution.gpkg",
+                                 layer=f"{sampling}")
+      except:
+         continue
 
       for i in range(len(records)):
          entry = records.iloc[i]
