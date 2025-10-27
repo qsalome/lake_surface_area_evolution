@@ -12,31 +12,6 @@ from matplotlib.ticker import MultipleLocator
 
 
 #--------------------------------------------------------------------
-def convert_date2float(date_str):
-   """
-   Read the date as a string and convert it into a float
-   that can be used to plot and fit the data.
-   
-   Parameters
-   ----------
-   date_str: str
-         date in string format (%Y-%m-%d)
-
-   Returns
-   -------
-   numpy.array of float
-   """
-   date      = datetime.strptime(date_str,"%Y-%m-%d")
-   timetuple = date.timetuple()
-
-   if(calendar.isleap(timetuple.tm_year)):
-      fdate = timetuple.tm_year+(timetuple.tm_yday-1)/366
-   else:
-      fdate = timetuple.tm_year+(timetuple.tm_yday-1)/365
-
-   return fdate
-
-#--------------------------------------------------------------------
 def fit_linear(y,x=None,err=None,method='leastsq'):
    """
    Minimize the data points with a linear function (linear regression)
@@ -184,7 +159,7 @@ with open(DATA_DIRECTORY / "lakes_mexico_catalogue.json") as file:
 
 area_evo = np.array([])
 for lake_name in ["Patzcuaro"]:#dict:
-   areas = pd.DataFrame(columns=["date","float_date"]+[f"area_{sampling}"
+   areas = pd.DataFrame(columns=["date"]+[f"area_{sampling}"
                for sampling in ["daily","weekly","monthly"]])
 
    for sampling in ["daily","weekly","monthly"]:
@@ -197,9 +172,8 @@ for lake_name in ["Patzcuaro"]:#dict:
 
       for i in range(len(records)):
          entry = records.iloc[i]
-         d = {"date": entry['date'],
-              "float_date": convert_date2float(entry['date'])
-             }
+         date = datetime.strptime(entry['date'],"%Y-%m-%d")
+         d = {"date": date}
          if(sampling=="daily"):
             d[f"area_daily"]   = [entry['geometry'].area/1e6]
             d[f"area_weekly"]  = [np.nan]

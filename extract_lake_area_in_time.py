@@ -310,7 +310,7 @@ def derive_NDWI(raster):
    return NDWI
 
 #--------------------------------------------------------------------
-def extract_polygon_lake(water,time_interval):
+def extract_polygon_lake(water,date):
    """
    Given a Sentinel data, derive the Normalized Difference Water
    Index (NDWI).
@@ -331,17 +331,18 @@ def extract_polygon_lake(water,time_interval):
    gdf   = gdf[~np.isnan(gdf["water"])]
    gdf["area"]  = gdf.area
    poly  = gdf[gdf["area"] == np.max(gdf["area"])].reset_index()
-   poly['date'] = time_interval[0]
+   poly['date'] = date
 
    line = poly.geometry.values[0]
    line = LineString(line.exterior)
-   d    = {'date': [time_interval[0]], 'geometry': [line]}
+   d    = {'date': [date],
+           'geometry': [line]}
    line_gdf = geopandas.GeoDataFrame(d,crs=poly.crs)
 
    return poly[['date','geometry']],line_gdf
 
 #--------------------------------------------------------------------
-def plot_rgb(raster,sampling,date=None):
+def plot_rgb(raster,sampling,date=datetime.now()):
    """
    Plot the RGB composite associated with the raster image
    after proejction to EPSG:4326.
@@ -390,7 +391,7 @@ def plot_rgb(raster,sampling,date=None):
 
 #--------------------------------------------------------------------
 def plot_raster(raster,gdf=None,sampling='monthly',
-   vmin=None,vmax=None,date=None):
+   vmin=None,vmax=None,date=datetime.now()):
    """
    Plot the raster image after projection to EPSG:4326.
    
@@ -504,6 +505,7 @@ for key in dict:
 
 
    for interval in tqdm(intervals):
+      date   = datetime.strptime(interval[0],"%Y-%m-%d")
       raster = read_sentinel(config,time_interval=interval,bbox=bbox,
             epsg="EPSG:6369")
 
@@ -517,8 +519,7 @@ for key in dict:
       cl_proba = raster.sel(band=13)
       cl_frac  = derive_cloud_fraction(cl_proba)
 
-#      if(cl_frac>cloud_area_thres):
-#         date = datetime.strptime(interval[0],"%Y-%m-%d")
+      if(cl_frac>cloud_area_thres):
 #         rgb = plot_rgb(raster,sampling,date=date)
 #         title = f"{lake_name}_frac{cl_frac:.2f}_"
 #         if(sampling == "monthly"):
@@ -529,7 +530,7 @@ for key in dict:
 
 #         fig = plot_raster(cl_proba,sampling=sampling,vmin=0,date=date)
 #         fig.savefig(FIG_DIRECTORY / 'Cloud_proba' / title)
-#         continue
+         continue
 
       NDWI  = derive_NDWI(raster)
 
@@ -541,7 +542,7 @@ for key in dict:
       water = NDWI.where(NDWI > 0)
       water = water/water
 
-      lake,lake_shore = extract_polygon_lake(water,time_interval=interval)
+      lake,lake_shore = extract_polygon_lake(water,date=date)
 
       try:
          records = pd.concat([records, lake])
@@ -550,7 +551,6 @@ for key in dict:
 
 #      if(len(records)<=3): continue
 #      elif(lake.area[0]<0.85*records.area.median()):
-#         date = datetime.strptime(interval[0],"%Y-%m-%d")
 #         rgb = plot_rgb(raster,sampling,date=date)
 
 #         fig = plot_raster(NDWI,lake,sampling,vmin=-1,vmax=1,date=date)
@@ -565,7 +565,7 @@ for key in dict:
    # Plots with EPSG:4326
 
    records.to_file(DATA_DIRECTORY / f"{lake_name}_lake_evolution.gpkg",
-            layer=f'{sampling}',mode='a')
+            layer=f'{sampling}')
    del records
 
 
