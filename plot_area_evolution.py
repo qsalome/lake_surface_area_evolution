@@ -71,10 +71,10 @@ def plot_surface_area_evolution(areas,lake_name=""):
    #areas = areas.sort_values(by=['float_date'])
 
    # Read the temperature for the selected city
-   dates   = np.array(areas["float_date"]).astype(float)
-   daily   = np.array(areas["area_daily"]).astype(float)
-   weekly  = np.array(areas["area_weekly"]).astype(float)
-   monthly = np.array(areas["area_monthly"]).astype(float)
+   dates   = areas["float_date"].to_numpy()
+   daily   = areas["area_daily"].to_numpy()
+   weekly  = areas["area_weekly"].to_numpy()
+   monthly = areas["area_monthly"].to_numpy()
 
    y_min   = np.nanpercentile([daily,weekly,monthly],5)
    y_max   = np.nanmax([daily,weekly,monthly])
@@ -84,48 +84,42 @@ def plot_surface_area_evolution(areas,lake_name=""):
    fig,ax = plt.subplots(figsize=(10,7))
 
    ### Plot monthly records
-   samp = np.where(np.isfinite(monthly))
-   if(len(samp[0]>0)):
-      ax.scatter(dates,monthly, marker='o', s=8,color='black')
-      ax.plot(dates,monthly, 'k-')
+   ax.scatter(dates,monthly, marker='o', s=8,color='black')
+   ax.plot(dates,monthly, 'k-')
 
-      samp = np.where((np.isfinite(monthly))&
-                      (monthly>np.nanpercentile(monthly,5))&
-                      (monthly<np.nanpercentile(monthly,95)))
-      model = fit_linear(monthly[samp],x=dates[samp])
-      area_evo = (model[-1]-model[0])/model[0]*100
-      ax.plot(dates[samp],model,'b--',
-                  label=f'surface area: {area_evo:+.2f}%')
+   samp = np.where((np.isfinite(monthly))&
+                   (monthly>np.nanpercentile(monthly,5))&
+                   (monthly<np.nanpercentile(monthly,95)))
+   model = fit_linear(monthly[samp],x=dates[samp])
+   area_evo = (model[-1]-model[0])/model[0]*100
+   ax.plot(dates[samp],model,'b--',
+               label=f'surface area: {area_evo:+.2f}%')
 
 
    ### Plot weekly records
-   samp = np.where(np.isfinite(weekly))
-   if(len(samp[0]>0)):
-      ax.scatter(dates,weekly, marker='o', s=8,color='red')
-      ax.plot(dates,weekly, 'r-')
+   ax.scatter(dates,weekly, marker='o', s=8,color='red')
+   ax.plot(dates,weekly, 'r-')
 
-      samp = np.where((np.isfinite(weekly))&
-                      (weekly>np.nanpercentile(weekly,5))&
-                      (weekly<np.nanpercentile(weekly,95)))
-      model = fit_linear(weekly[samp],x=dates[samp])
-      area_evo = (model[-1]-model[0])/model[0]*100
-      ax.plot(dates[samp],model,'r--',
-                  label=f'surface area: {area_evo:+.2f}%')
+   samp = np.where((np.isfinite(weekly))&
+                   (weekly>np.nanpercentile(weekly,5))&
+                   (weekly<np.nanpercentile(weekly,95)))
+   model = fit_linear(weekly[samp],x=dates[samp])
+   area_evo = (model[-1]-model[0])/model[0]*100
+   ax.plot(dates[samp],model,'r--',
+               label=f'surface area: {area_evo:+.2f}%')
 
 
    ### Plot daily records
-   samp = np.where(np.isfinite(daily))
-   if(len(samp[0]>0)):
-      ax.scatter(dates,daily, marker='o', s=8,color='blue')
-      ax.plot(dates,daily, 'r-')
+   ax.scatter(dates,daily, marker='o', s=8,color='green')
+   ax.plot(dates,daily, 'g-')
 
-      samp = np.where((np.isfinite(daily))&
-                      (daily>np.nanpercentile(daily,5))&
-                      (daily<np.nanpercentile(daily,95)))
-      model = fit_linear(daily[samp],x=dates[samp])
-      area_evo = (model[-1]-model[0])/model[0]*100
-      ax.plot(dates[samp],model,'b--',
-                  label=f'surface area: {area_evo:+.2f}%')
+   samp = np.where((np.isfinite(daily))&
+                   (daily>np.nanpercentile(daily,5))&
+                   (daily<np.nanpercentile(daily,95)))
+   model = fit_linear(daily[samp],x=dates[samp])
+   area_evo = (model[-1]-model[0])/model[0]*100
+   ax.plot(dates[samp],model,'b--',
+               label=f'surface area: {area_evo:+.2f}%')
 
    ax.legend(loc='upper right')
 
