@@ -123,9 +123,9 @@ def plot_surface_area_evolution(areas,lake_name=""):
 
 
    ### Plot weekly records
-   samp = np.where(np.isfinite(weekly))
-   ax.scatter(dates,weekly, marker='o', s=8,color='red',zorder=1,alpha=0.5)
-   ax.plot(dates[samp],weekly[samp], 'r-',zorder=1,alpha=0.5)
+#   samp = np.where(np.isfinite(weekly))
+#   ax.scatter(dates,weekly, marker='o', s=8,color='red',zorder=1,alpha=0.5)
+#   ax.plot(dates[samp],weekly[samp], 'r-',zorder=1,alpha=0.5)
 
 
    ### Plot daily records
@@ -159,7 +159,7 @@ DATA_DIRECTORY = NOTEBOOK_PATH / "data"
 FIG_DIRECTORY  = NOTEBOOK_PATH / "figures"
 
 
-with open(DATA_DIRECTORY / "lakes_mexico_catalogue.json") as file:
+with open(DATA_DIRECTORY / "lakes_catalogue.json") as file:
    dict = json.load(file)
 
 

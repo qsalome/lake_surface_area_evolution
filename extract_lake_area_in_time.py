@@ -464,7 +464,7 @@ DATA_DIRECTORY = NOTEBOOK_PATH / "data"
 FIG_DIRECTORY  = NOTEBOOK_PATH / "figures"
 
 
-with open(DATA_DIRECTORY / "lakes_mexico_catalogue.json") as file:
+with open(DATA_DIRECTORY / "lakes_catalogue.json") as file:
    dict = json.load(file)
 
 
@@ -478,13 +478,15 @@ cloud_area_thres = 0.2
 for key in dict:
    lake_name = key
    print(lake_name)
-   bbox=BBox(tuple(dict[key]),crs=CRS.WGS84)
+   box_coords = dict[key]["box"]
+   work_epsg  = dict[key]["EPSG"]
+   bbox=BBox(tuple(box_coords),crs=CRS.WGS84)
    size = bbox_to_dimensions(bbox, resolution=resolution)
 
 
 
    #raster = read_sentinel(config,time_interval=time_interval,bbox=bbox,
-   #            epsg="EPSG:6369")
+   #            epsg=f"EPSG:{work_epsg}")
 
    #cl_proba = raster.sel(band=13)
    #cl_frac  = derive_cloud_fraction(cl_proba)
@@ -507,7 +509,7 @@ for key in dict:
    for interval in tqdm(intervals):
       date   = datetime.strptime(interval[0],"%Y-%m-%d")
       raster = read_sentinel(config,time_interval=interval,bbox=bbox,
-            epsg="EPSG:6369")
+            epsg=f"EPSG:{work_epsg}")
 
       # do not continue if there is no data
       if(raster.max() == 0): continue
